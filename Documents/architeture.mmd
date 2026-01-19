@@ -1,0 +1,82 @@
+flowchart LR
+
+%% =========================
+%% SOURCES
+%% =========================
+A["NYC TLC Parquet Files<br>(Official Website)"]:::source
+
+%% =========================
+%% DATA LAKE
+%% =========================
+subgraph DataLake["Data Lake (MinIO)"]
+    DL_RAW["Raw Zone<br>nyc-raw"]:::datalake
+    DL_INTERIM["Interim Zone<br>nyc-interim"]:::datalake
+end
+
+%% =========================
+%% SPARK CLUSTER (EX01 + EX02)
+%% =========================
+subgraph SparkCluster["Spark Cluster – EX01 & EX02"]
+    M["Spark Master"]:::spark
+    W1["Spark Worker 1"]:::spark
+    W2["Spark Worker 2"]:::spark
+end
+
+M --> W1
+M --> W2
+
+%% =========================
+%% EX01 – DATA RETRIEVAL (SPARK)
+%% =========================
+A -->|"EX01 – spark-submit<br>Download parquet"| SparkCluster
+SparkCluster -->|"Write Parquet"| DL_RAW
+
+%% =========================
+%% EX02 – DATA INGESTION (SPARK, 2 BRANCHES)
+%% =========================
+DL_RAW -- Read --> SparkCluster
+
+SparkCluster -- "EX02 – Branch 1<br>Write Parquet" --> DL_INTERIM
+SparkCluster -- "EX02 – Branch 2<br>Write JDBC" --> STAGING
+
+%% =========================
+%% DATA WAREHOUSE (EX03)
+%% =========================
+subgraph DataWarehouse["Data Warehouse – PostgreSQL (EX03)"]
+    STAGING["yellow_trips_staging<br>(mono-mois)"]:::warehouse
+    DW_STAR["Star Schema<br>fact_trip + dimensions enrichies"]:::warehouse
+end
+
+STAGING --> DW_STAR
+
+%% =========================
+%% EX04 – ANALYTICAL CONSUMPTION
+%% =========================
+subgraph EX04["EX04 – Analytical Consumption"]
+    EDA["EDA Notebook<br>(Jupyter / SQL)"]:::analytics
+    DASH["Streamlit Dashboard<br>(Interactive BI)"]:::analytics
+end
+
+DW_STAR --> EDA
+DW_STAR --> DASH
+
+%% =========================
+%% OPTIONAL DATA SCIENCE PATH
+%% =========================
+DL_INTERIM --> ML["Machine Learning / Advanced EDA"]:::analytics
+
+%% =========================
+%% ORCHESTRATION (FUTURE)
+%% =========================
+Airflow["Airflow Orchestration<br>(Future)"]:::extension
+Airflow -. Trigger jobs .-> SparkCluster
+
+%% =========================
+%% STYLES
+%% =========================
+classDef spark fill:#f6c85f,stroke:#333
+classDef datalake fill:#6fa8dc,stroke:#333
+classDef warehouse fill:#93c47d,stroke:#333
+classDef source fill:#cccccc,stroke:#333
+classDef extension fill:#b4a7d6,stroke:#333
+classDef analytics fill:#ffd966,stroke:#333

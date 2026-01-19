@@ -1,44 +1,60 @@
-# This Dockerfile is taken from https://github.com/mvillarrealb/docker-spark-cluster/blob/master/docker-compose.yml
-# and updated to install the Scala 2.13 version of Spark 3.2.0
+FROM eclipse-temurin:8-jre-jammy
 
-FROM eclipse-temurin:21-jre-jammy as builder
+ARG SPARK_VERSION=3.5.1
+ARG HADOOP_PROFILE=hadoop3
+ARG SPARK_PACKAGE=spark-${SPARK_VERSION}-bin-${HADOOP_PROFILE}
 
-# Add Dependencies for PySpark
+ENV SPARK_HOME=/opt/spark
+ENV PATH="${SPARK_HOME}/bin:${SPARK_HOME}/sbin:${PATH}"
 
-# Fix the value of PYTHONHASHSEED
-# Note: this is needed when you use Python 3.3 or greater
-ENV SPARK_VERSION=3.5.5 \
-SCALA_VERSION=2.13 \
-HADOOP_VERSION=3 \
-SPARK_HOME=/opt/spark \
-PYTHONHASHSEED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-distutils \
+    python3-pip \
+    curl \
+    bash \
+    ca-certificates \
+    tini \
+    procps \
+ && rm -rf /var/lib/apt/lists/*
 
-RUN wget --no-verbose -O apache-spark.tgz "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}-scala${SCALA_VERSION}.tgz" \
-&& mkdir -p /opt/spark \
-&& tar -xf apache-spark.tgz -C /opt/spark --strip-components=1 \
-&& rm apache-spark.tgz
+# Ensure python command exists
+RUN ln -s /usr/bin/python3 /usr/bin/python
 
+RUN pip3 install --no-cache-dir \
+    numpy \
+    pandas \
+    flake8 \
+    pytest \
+    pyment \
+    autopep8
 
-FROM builder as apache-spark
+# Install Spark
+RUN mkdir -p /opt \
+ && curl -fSL https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz -o /tmp/spark.tgz \
+ && tar -xzf /tmp/spark.tgz -C /opt \
+ && mv /opt/${SPARK_PACKAGE} ${SPARK_HOME} \
+ && rm /tmp/spark.tgz
 
-WORKDIR /opt/spark
+# Add Hadoop AWS + AWS SDK bundle (for s3a://)
+# Spark 3.5.x (hadoop3 build) is typically aligned with Hadoop 3.3.x.
+# We'll use 3.3.4 which is a common match for Spark hadoop3 distributions.
+RUN curl -fSL https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar \
+      -o ${SPARK_HOME}/jars/hadoop-aws-3.3.4.jar \
+ && curl -fSL https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
+      -o ${SPARK_HOME}/jars/aws-java-sdk-bundle-1.12.262.jar
 
-ENV SPARK_MASTER_PORT=7077 \
-SPARK_MASTER_WEBUI_PORT=8080 \
-SPARK_LOG_DIR=/opt/spark/logs \
-SPARK_MASTER_LOG=/opt/spark/logs/spark-master.out \
-SPARK_WORKER_LOG=/opt/spark/logs/spark-worker.out \
-SPARK_WORKER_WEBUI_PORT=8080 \
-SPARK_WORKER_PORT=7000
+# PostgreSQL JDBC driver
+RUN curl -fSL https://repo1.maven.org/maven2/org/postgresql/postgresql/42.7.4/postgresql-42.7.4.jar \
+      -o ${SPARK_HOME}/jars/postgresql-42.7.4.jar
 
-EXPOSE 8080 7077 7000
+# Default Spark conf
+RUN mkdir -p ${SPARK_HOME}/conf
+COPY Docker/spark-defaults.conf ${SPARK_HOME}/conf/spark-defaults.conf
 
-RUN mkdir -p $SPARK_LOG_DIR && \
-touch $SPARK_MASTER_LOG && \
-touch $SPARK_WORKER_LOG && \
-ln -sf /dev/stdout $SPARK_MASTER_LOG && \
-ln -sf /dev/stdout $SPARK_WORKER_LOG
+# Entrypoint
+COPY Docker/start-spark.sh /start-spark.sh
+RUN chmod +x /start-spark.sh
 
-COPY start-spark.sh /
-
-CMD ["/bin/bash", "/start-spark.sh"]
+WORKDIR /opt/workdir
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/start-spark.sh"]

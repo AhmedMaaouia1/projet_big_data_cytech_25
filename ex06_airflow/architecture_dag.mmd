@@ -1,0 +1,104 @@
+---
+title: NYC Taxi Pipeline - Airflow Orchestration
+---
+flowchart TB
+    subgraph Airflow["🎯 Apache Airflow"]
+        direction TB
+        
+        subgraph Init["Phase 0: Initialisation"]
+            START([start_pipeline])
+            LOG[log_pipeline_params]
+            CHECK{check_source_available}
+        end
+        
+        subgraph EX01["📥 Phase 1: EX01 - Data Retrieval"]
+            EX01_START([ex01_start])
+            EX01_SPARK[ex01_spark_submit]
+            EX01_VERIFY[ex01_verify_output]
+            EX01_END([ex01_complete])
+        end
+        
+        subgraph EX02["🔄 Phase 2: EX02 - Data Ingestion"]
+            EX02_START([ex02_start])
+            EX02_SPARK[ex02_spark_submit]
+            EX02_B1[verify_minio_interim]
+            EX02_B2[verify_postgres_staging]
+            EX02_END([ex02_complete])
+        end
+        
+        subgraph EX03["🏢 Phase 3: EX03 - DW Loading"]
+            EX03_START([ex03_start])
+            EX03_DIM[load_dimensions]
+            EX03_FACT[load_fact_trip]
+            EX03_VERIFY[verify_dw]
+            EX03_END([ex03_complete])
+        end
+        
+        subgraph EX05["🤖 Phase 4: EX05 - ML Pipeline"]
+            EX05_CHECK{can_run_ml?}
+            EX05_PARAMS[compute_ml_params]
+            EX05_START([ex05_start])
+            EX05_RUN[run_ml_pipeline]
+            EX05_VERIFY[verify_outputs]
+            EX05_END([ex05_complete])
+        end
+        
+        subgraph Final["Phase 5: Finalisation"]
+            SUCCESS([pipeline_success])
+            LOG_END[log_completion]
+        end
+    end
+    
+    %% Connections
+    START --> LOG --> CHECK
+    CHECK -->|Data Available| EX01_START
+    CHECK -->|Not Available| SUCCESS
+    
+    EX01_START --> EX01_SPARK --> EX01_VERIFY --> EX01_END
+    
+    EX01_END --> EX02_START --> EX02_SPARK
+    EX02_SPARK --> EX02_B1
+    EX02_SPARK --> EX02_B2
+    EX02_B1 --> EX02_END
+    EX02_B2 --> EX02_END
+    
+    EX02_END --> EX03_START --> EX03_DIM --> EX03_FACT --> EX03_VERIFY --> EX03_END
+    
+    EX02_END --> EX05_CHECK
+    EX05_CHECK -->|Yes| EX05_PARAMS --> EX05_START --> EX05_RUN --> EX05_VERIFY --> EX05_END
+    EX05_CHECK -->|No| SUCCESS
+    
+    EX03_END --> SUCCESS
+    EX05_END --> SUCCESS
+    SUCCESS --> LOG_END
+    
+    %% External Systems
+    subgraph External["🔧 Infrastructure"]
+        MINIO[(MinIO S3)]
+        PG[(PostgreSQL)]
+        SPARK[Spark Cluster]
+    end
+    
+    EX01_SPARK -.->|s3a://nyc-raw| MINIO
+    EX02_SPARK -.->|s3a://nyc-interim| MINIO
+    EX02_SPARK -.->|staging| PG
+    EX03_DIM -.->|dimensions| PG
+    EX03_FACT -.->|fact_trip| PG
+    EX05_RUN -.->|read interim| MINIO
+    
+    EX01_SPARK -.->|spark-submit| SPARK
+    EX02_SPARK -.->|spark-submit| SPARK
+    EX05_RUN -.->|spark-submit| SPARK
+    
+    %% Styling
+    classDef phase fill:#f9f9f9,stroke:#333,stroke-width:2px
+    classDef task fill:#e1f5fe,stroke:#0288d1,stroke-width:1px
+    classDef decision fill:#fff3e0,stroke:#ef6c00,stroke-width:1px
+    classDef endpoint fill:#e8f5e9,stroke:#388e3c,stroke-width:1px
+    classDef external fill:#fce4ec,stroke:#c2185b,stroke-width:1px
+    
+    class EX01,EX02,EX03,EX05,Init,Final phase
+    class EX01_SPARK,EX02_SPARK,EX03_DIM,EX03_FACT,EX05_RUN,LOG,EX01_VERIFY,EX02_B1,EX02_B2,EX03_VERIFY,EX05_VERIFY,EX05_PARAMS,LOG_END task
+    class CHECK,EX05_CHECK decision
+    class START,EX01_START,EX01_END,EX02_START,EX02_END,EX03_START,EX03_END,EX05_START,EX05_END,SUCCESS endpoint
+    class MINIO,PG,SPARK external

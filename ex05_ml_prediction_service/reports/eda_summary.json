@@ -1,0 +1,45 @@
+{
+  "range": {
+    "start_year": 2023,
+    "start_month": 1,
+    "end_year": 2023,
+    "end_month": 2
+  },
+  "rows": 5930514,
+  "cols": 19,
+  "validation_ok": false,
+  "validation_errors": [
+    "Found rows where dropoff is earlier than pickup."
+  ],
+  "missing_ratio_by_col": {
+    "store_and_fwd_flag": 0.025031557129786726,
+    "RatecodeID": 0.025031557129786726,
+    "passenger_count": 0.025031557129786726,
+    "airport_fee": 0.025031557129786726,
+    "congestion_surcharge": 0.025031557129786726,
+    "VendorID": 0.0,
+    "tpep_pickup_datetime": 0.0,
+    "tpep_dropoff_datetime": 0.0,
+    "DOLocationID": 0.0,
+    "PULocationID": 0.0,
+    "trip_distance": 0.0,
+    "fare_amount": 0.0,
+    "payment_type": 0.0,
+    "extra": 0.0,
+    "mta_tax": 0.0,
+    "tolls_amount": 0.0,
+    "tip_amount": 0.0,
+    "total_amount": 0.0,
+    "improvement_surcharge": 0.0
+  },
+  "target_desc": {
+    "count": 5930514.0,
+    "mean": 27.390736904086225,
+    "std": 21.466019444571458,
+    "min": 0.0,
+    "25%": 15.6,
+    "50%": 20.2,
+    "75%": 28.9,
+    "max": 2208.1
+  }
+}

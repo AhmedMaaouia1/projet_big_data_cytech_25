@@ -1,0 +1,254 @@
+# ============================================================================
+# AIRFLOW DOCKER COMPOSE - NYC Taxi Big Data Pipeline
+# ============================================================================
+# Ce fichier configure Apache Airflow pour orchestrer le pipeline EX01 → EX05
+# 
+# ARCHITECTURE:
+#   - PostgreSQL (metadata DB pour Airflow)
+#   - Airflow Webserver (UI)
+#   - Airflow Scheduler (ordonnanceur)
+#
+# CHANGEMENT MAJEUR (Solution B - SparkSubmitOperator):
+#   - Image custom avec Spark intégré (voir Dockerfile)
+#   - SparkSubmitOperator au lieu de BashOperator + docker exec
+#   - Communication réseau directe avec spark-master
+#   - Plus besoin du socket Docker !
+#
+# Usage:
+#   docker-compose build    # Construire l'image custom (première fois)
+#   docker-compose up -d    # Démarrer
+#   docker-compose down     # Arrêter
+#
+# Accès UI: http://localhost:8080
+# Login: airflow / airflow
+# ============================================================================
+
+# ============================================================================
+# CONFIGURATION COMMUNE À TOUS LES SERVICES AIRFLOW
+# ============================================================================
+# On utilise un "anchor" YAML (&airflow-common) pour éviter la répétition
+# Les services qui font <<: *airflow-common héritent de cette config
+# ============================================================================
+x-airflow-common: &airflow-common
+  # CHANGEMENT: On build notre image custom au lieu d'utiliser l'image officielle
+  # Cette image contient Spark + Java + les providers nécessaires
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: airflow-spark:2.8.1
+  
+  environment: &airflow-common-env
+    # ========== Airflow Core Configuration ==========
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: 'Europe/Paris'
+    
+    # ========== Database Configuration ==========
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+    
+    # ========== Webserver Configuration ==========
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+    AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: 'Europe/Paris'
+    
+    # ========== Scheduler Configuration ==========
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    
+    # ========== API Configuration ==========
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    
+    # ========== Connexion Spark (pour SparkSubmitOperator) ==========
+    # Cette variable configure automatiquement la connexion "spark_default"
+    # Format: spark://<host>:<port>
+    # IMPORTANT: Le host doit inclure le schéma "spark://" pour que Spark le reconnaisse
+    # On URL-encode "spark://" comme "spark%3A%2F%2F" dans le host
+    # Mode CLUSTER: Le driver tourne sur le cluster, pas dans Airflow
+    AIRFLOW_CONN_SPARK_DEFAULT: 'spark://spark%3A%2F%2Fspark-master:7077?deploy-mode=cluster'
+    
+    # ========== Variables pour le Pipeline ==========
+    # Ces variables sont utilisées par les DAGs
+    MINIO_ENDPOINT: minio:9000
+    MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+    MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    
+    # Variables S3 pour Spark (communication avec MinIO)
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: '5432'
+    POSTGRES_DB: ${POSTGRES_DB:-nyc_taxi}
+    POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    
+    SPARK_MASTER_URL: spark://spark-master:7077
+    
+    # ========== Configuration Spark/Java ==========
+    JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+    SPARK_HOME: /opt/spark
+    
+  volumes:
+    # DAGs, logs et plugins Airflow
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./scripts:/opt/airflow/scripts
+    
+    # Accès au projet complet (pour les JARs Scala et scripts Python)
+    - ..:/opt/workdir
+    
+    # Volume partagé pour les données (EX01 télécharge dans /opt/data)
+    - ../data:/opt/data
+    
+    # Socket Docker pour exécuter docker exec depuis Airflow
+    - /var/run/docker.sock:/var/run/docker.sock
+    
+  depends_on: &airflow-common-depends-on
+    airflow-postgres:
+      condition: service_healthy
+
+services:
+  # ==========================================================================
+  # POSTGRESQL - Base de métadonnées Airflow
+  # ==========================================================================
+  # Cette base stocke les métadonnées Airflow (DAGs, runs, logs, etc.)
+  # Séparée de la DB PostgreSQL du Data Warehouse (postgres principal)
+  # ==========================================================================
+  airflow-postgres:
+    image: postgres:15
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+    networks:
+      - nyc-net
+
+  # ==========================================================================
+  # AIRFLOW WEBSERVER - Interface utilisateur
+  # ==========================================================================
+  # L'UI Airflow accessible sur http://localhost:8080
+  # Permet de voir les DAGs, déclencher des runs, voir les logs, etc.
+  # ==========================================================================
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      - nyc-net
+
+  # ==========================================================================
+  # AIRFLOW SCHEDULER - Ordonnanceur des DAGs
+  # ==========================================================================
+  # Le scheduler lit les DAGs et déclenche les tâches selon le planning
+  # C'est lui qui exécute réellement les SparkSubmitOperator
+  # ==========================================================================
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      - nyc-net
+
+  # ==========================================================================
+  # AIRFLOW INIT - Initialisation (migrations DB + création admin)
+  # ==========================================================================
+  # Ce conteneur s'exécute une seule fois au démarrage pour:
+  #   1. Créer les tables Airflow dans PostgreSQL
+  #   2. Créer l'utilisateur admin (airflow/airflow)
+  # ==========================================================================
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -e
+        echo "============================================"
+        echo "Starting Airflow initialization..."
+        echo "============================================"
+        
+        # Vérifier que Spark est bien installé
+        echo "Checking Spark installation..."
+        spark-submit --version || echo "Warning: spark-submit not in PATH"
+        
+        # Initialisation de la DB Airflow
+        airflow db migrate
+        
+        # Création de l'utilisateur admin
+        airflow users create \
+          --username airflow \
+          --firstname Airflow \
+          --lastname Admin \
+          --role Admin \
+          --email admin@example.com \
+          --password airflow || true
+        
+        # Vérifier la connexion Spark
+        echo "Spark connection configured: $AIRFLOW_CONN_SPARK_DEFAULT"
+        
+        echo "============================================"
+        echo "Airflow initialized successfully!"
+        echo "Access UI at: http://localhost:8080"
+        echo "Login: airflow / airflow"
+        echo "============================================"
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+    networks:
+      - nyc-net
+
+# ==========================================================================
+# VOLUMES
+# ==========================================================================
+volumes:
+  airflow-postgres-db-volume:
+    name: airflow-postgres-db
+
+# ==========================================================================
+# NETWORKS
+# ==========================================================================
+# IMPORTANT: On utilise le réseau "nyc-net" qui est créé par le docker-compose
+# principal. Cela permet à Airflow de communiquer avec:
+#   - spark-master (pour soumettre les jobs)
+#   - minio (pour vérifier les fichiers)
+#   - postgres (pour les requêtes SQL)
+# ==========================================================================
+networks:
+  nyc-net:
+    external: true
+    name: nyc-net

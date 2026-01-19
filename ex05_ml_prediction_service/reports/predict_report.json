@@ -1,0 +1,15 @@
+{
+  "run_type": "inference",
+  "timestamp": "2026-01-05T10:31:52.285810",
+  "data": {
+    "input_path": "s3a://nyc-interim/yellow/2023/02",
+    "rows_scored": 2811241
+  },
+  "validation": {
+    "schema_valid": true,
+    "sample_size": 1000
+  },
+  "execution": {
+    "duration_seconds": 65.22
+  }
+}

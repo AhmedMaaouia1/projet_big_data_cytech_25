@@ -1,53 +1,59 @@
-target/
-!.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
-
-### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
-*.iws
-*.iml
-*.ipr
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
-
-### Eclipse ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
-.vscode/
-
-### Mac OS ###
+# OS / IDE
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.iml
 
-### Scala ###
-.bsp/
+# Logs
+*.log
+logs/
+spark-events/
 
-### Minio ###
-minio-data
+# Scala / sbt
+target/
+project/target/
+project/project/
+.metals/
+.bloop/
+*.class
 
-### Hadoop ###
-hadoop
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# UV / Python package manager
+uv.lock
+
+# Data Lake (on versionne la structure, pas la donnée)
+data/raw/*
+data/interim/*
+data/processed/*
+data/external/*
+!data/**/.gitkeep
+
+# ML Models (trop volumineux pour Git)
+ex05_ml_prediction_service/models/*
+!ex05_ml_prediction_service/models/.gitkeep
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Docker
+*.tar
+
+*.html
+Documents/Captures/Captures Générales/*

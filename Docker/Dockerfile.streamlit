@@ -1,0 +1,64 @@
+# Dockerfile for NYC Taxi ML Streamlit Application
+# =================================================
+
+FROM python:3.11-slim
+
+# Metadata
+LABEL maintainer="NYC Taxi Pipeline Team"
+LABEL description="Streamlit application for ML model demonstration"
+LABEL version="1.0"
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    STREAMLIT_SERVER_PORT=8501 \
+    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
+    STREAMLIT_SERVER_HEADLESS=true \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+# Install Java (required for PySpark)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-21-jre-headless \
+    curl \
+    procps \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set JAVA_HOME
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements first (for better caching)
+COPY ex05_ml_prediction_service/streamlit_app/requirements.txt /app/requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the streamlit application
+COPY ex05_ml_prediction_service/streamlit_app/ /app/streamlit_app/
+
+# Copy models and reports (will be mounted as volumes in production)
+# These are placeholders - actual data comes from volume mounts
+RUN mkdir -p /app/models /app/reports
+
+# Set working directory to streamlit_app
+WORKDIR /app/streamlit_app
+
+# Expose Streamlit port
+EXPOSE 8501
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+# Run Streamlit
+CMD ["streamlit", "run", "app.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true", \
+     "--browser.gatherUsageStats=false"]
