@@ -147,11 +147,8 @@ cd nyc-taxi-bigdata-pipeline
 
 ### 2. Configurer l'environnement
 
-Créer le fichier `.env` à partir du template :
+Créer manuellement un fichier .env à partir des variables listées ci-dessous
 
-```powershell
-Copy-Item .env.example .env
-```
 
 Exemple de configuration :
 
@@ -159,12 +156,12 @@ Exemple de configuration :
 PROJECT_ROOT=S:/PROJECTS/projects/nyc-taxi-bigdata-pipeline
 DOCKER_VOLUMES_ROOT=S:/PROJECTS/docker/volumes
 
-MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin123
+MINIO_ROOT_USER=
+MINIO_ROOT_PASSWORD=
 
-POSTGRES_DB=nyc_dw
-POSTGRES_USER=nyc_user
-POSTGRES_PASSWORD=nyc_password
+POSTGRES_DB=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
 ```
 
 ### 3. Lancer l'infrastructure

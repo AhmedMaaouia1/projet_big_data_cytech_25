@@ -47,6 +47,7 @@ from airflow.exceptions import AirflowException
 import urllib.request
 import urllib.error
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -336,17 +337,17 @@ with dag:
     
     ex02_spark_submit = BashOperator(
         task_id='ex02_spark_submit',
-        bash_command="""
+        bash_command=f"""
             echo "🚀 EX02 - Data Ingestion (Double Branche)"
             docker exec \
-                -e POSTGRES_HOST=postgres \
-                -e POSTGRES_PORT=5432 \
-                -e POSTGRES_DB=nyc_dw \
-                -e POSTGRES_USER=nyc \
-                -e POSTGRES_PASSWORD=nyc123 \
-                -e MINIO_ENDPOINT=minio:9000 \
-                -e MINIO_ACCESS_KEY=minioadmin \
-                -e MINIO_SECRET_KEY=minioadmin \
+                -e POSTGRES_HOST={os.environ.get('POSTGRES_HOST', 'postgres')} \
+                -e POSTGRES_PORT={os.environ.get('POSTGRES_PORT', '5432')} \
+                -e POSTGRES_DB={os.environ.get('POSTGRES_DB', 'nyc_dw')} \
+                -e POSTGRES_USER={os.environ.get('POSTGRES_USER', 'nyc')} \
+                -e POSTGRES_PASSWORD={os.environ.get('POSTGRES_PASSWORD', 'nyc123')} \
+                -e MINIO_ENDPOINT={os.environ.get('MINIO_ENDPOINT', 'minio:9000')} \
+                -e MINIO_ACCESS_KEY={os.environ.get('MINIO_ACCESS_KEY', 'minioadmin')} \
+                -e MINIO_SECRET_KEY={os.environ.get('MINIO_SECRET_KEY', 'minioadmin')} \
                 spark-master spark-submit \
                 --class Ex02DataIngestion \
                 --master spark://spark-master:7077 \
@@ -355,8 +356,8 @@ with dag:
                 --executor-memory 2g \
                 --jars /opt/spark/jars/postgresql-42.7.4.jar \
                 /opt/workdir/ex02_data_ingestion/target/scala-2.12/ex02-data-ingestion_2.12-0.1.0.jar \
-                --year {{ execution_date.year }} \
-                --month {{ execution_date.strftime('%m') }} \
+                --year {{{{ execution_date.year }}}} \
+                --month {{{{ execution_date.strftime('%m') }}}} \
                 --enableDw true
         """,
         execution_timeout=timedelta(hours=2),
