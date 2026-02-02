@@ -50,7 +50,7 @@ ex05_ml_prediction_service/models/*
 # Secrets / env
 .env
 .env.*
-!.env.example
+.env.example
 
 # Docker
 *.tar
