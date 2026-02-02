@@ -1,0 +1,69 @@
+erDiagram
+
+    FACT_TRIP {
+        BIGINT trip_id PK
+        INT vendor_id FK
+        DATE pickup_date FK
+        TIME pickup_time FK
+        INT pickup_location_id FK
+        INT dropoff_location_id FK
+        INT payment_type_id FK
+        INT ratecode_id FK
+        INT passenger_count
+        DOUBLE trip_distance
+        DOUBLE fare_amount
+        DOUBLE extra
+        DOUBLE mta_tax
+        DOUBLE tip_amount
+        DOUBLE tolls_amount
+        DOUBLE improvement_surcharge
+        DOUBLE total_amount
+        DOUBLE congestion_surcharge
+        DOUBLE airport_fee
+    }
+
+    DIM_DATE {
+        DATE date_id PK
+        INT day
+        INT month
+        INT year
+        INT day_of_week
+        BOOLEAN is_weekend
+    }
+
+    DIM_TIME {
+        TIME time_id PK
+        INT hour
+        INT minute
+        INT second
+    }
+
+    DIM_LOCATION {
+        INT location_id PK
+        TEXT borough
+        TEXT zone
+        TEXT service_zone
+    }
+
+    DIM_VENDOR {
+        INT vendor_id PK
+        TEXT vendor_name
+    }
+
+    DIM_PAYMENT_TYPE {
+        INT payment_type_id PK
+        TEXT payment_description
+    }
+
+    DIM_RATECODE {
+        INT ratecode_id PK
+        TEXT ratecode_description
+    }
+
+    DIM_DATE ||--o{ FACT_TRIP : "pickup_date"
+    DIM_TIME ||--o{ FACT_TRIP : "pickup_time"
+    DIM_LOCATION ||--o{ FACT_TRIP : "pickup_location"
+    DIM_LOCATION ||--o{ FACT_TRIP : "dropoff_location"
+    DIM_VENDOR ||--o{ FACT_TRIP : "vendor"
+    DIM_PAYMENT_TYPE ||--o{ FACT_TRIP : "payment"
+    DIM_RATECODE ||--o{ FACT_TRIP : "ratecode"

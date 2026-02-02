@@ -1,0 +1,22 @@
+{
+  "rows_analyzed": 3166641,
+  "summary": {
+    "count": 3166641,
+    "mean_error": 0.145219175396317,
+    "std_error": 5.839226044100965,
+    "min_error": -256.7023916619582,
+    "max_error": 2355.116682292286,
+    "median_error": 0.18174923071910953,
+    "mean_abs_error": 2.1647262400781035,
+    "p25_error": -0.9815665941873153,
+    "p75_error": 1.2073525954357471,
+    "p95_error": 4.4511372923846295,
+    "p99_error": 11.806643338267506,
+    "pct_underestimate": 45.09,
+    "pct_overestimate": 54.91
+  },
+  "business_insights": [
+    "Model predictions are well-balanced between over/under estimation.",
+    "Most common cause of high errors: 'extended_duration_traffic_or_wait' (6/10 top errors)."
+  ]
+}

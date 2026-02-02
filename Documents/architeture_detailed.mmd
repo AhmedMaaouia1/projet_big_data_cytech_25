@@ -1,0 +1,231 @@
+flowchart LR
+
+%% =========================
+%% SOURCES
+%% =========================
+A["NYC TLC Parquet Files<br>(Official Website)"]:::source
+
+%% =========================
+%% DATA LAKE
+%% =========================
+subgraph DataLake["Data Lake (MinIO)"]
+    DL_RAW["Raw Zone<br>nyc-raw"]:::datalake
+    DL_INTERIM["Interim Zone<br>nyc-interim"]:::datalake
+end
+
+%% =========================
+%% SPARK CLUSTER
+%% =========================
+subgraph SparkCluster["Spark Cluster"]
+    M["Spark Master"]:::spark
+    W1["Spark Worker 1"]:::spark
+    W2["Spark Worker 2"]:::spark
+end
+
+M --> W1
+M --> W2
+
+%% =========================
+%% EX01 – DATA RETRIEVAL (SPARK SCALA)
+%% =========================
+subgraph EX01["EX01 – Data Retrieval (Scala)"]
+    EX01_PARAMS["Parameters<br>--year --month"]:::ex01
+    EX01_DOWNLOAD["Download Parquet<br>from NYC TLC CDN"]:::ex01
+    EX01_LOCAL["Local Storage<br>/opt/data/raw/yellow/YYYY/MM"]:::ex01
+    EX01_UPLOAD["Upload to MinIO<br>spark.write.parquet()"]:::ex01
+end
+
+A -->|"HTTPS Download"| EX01_DOWNLOAD
+EX01_PARAMS --> EX01_DOWNLOAD
+EX01_DOWNLOAD --> EX01_LOCAL
+EX01_LOCAL --> EX01_UPLOAD
+EX01_UPLOAD -->|"spark-submit"| SparkCluster
+SparkCluster -->|"s3a://nyc-raw/yellow/YYYY/MM/"| DL_RAW
+
+%% =========================
+%% EX02 – DATA INGESTION (SPARK SCALA)
+%% =========================
+subgraph EX02["EX02 – Data Ingestion (Scala)"]
+    EX02_PARAMS["Parameters<br>--year --month<br>--enableDw"]:::ex02
+    EX02_READ["Read Raw Parquet<br>spark.read.parquet()"]:::ex02
+    EX02_CLEAN["Data Cleaning<br>• Cast types<br>• Filter month window<br>• Remove nulls<br>• Validate ranges"]:::ex02
+    EX02_BRANCH1["Branch 1: Data Lake<br>Write Parquet<br>(ML-ready)"]:::ex02
+    EX02_BRANCH2["Branch 2: PostgreSQL<br>Write JDBC<br>(DW Staging)"]:::ex02
+end
+
+DL_RAW --> EX02_READ
+EX02_PARAMS --> EX02_READ
+EX02_READ --> EX02_CLEAN
+EX02_CLEAN --> EX02_BRANCH1
+EX02_CLEAN --> EX02_BRANCH2
+EX02_BRANCH1 -->|"s3a://nyc-interim/yellow/YYYY/MM/"| DL_INTERIM
+EX02_BRANCH2 -->|"JDBC overwrite"| STAGING
+
+%% =========================
+%% DATA WAREHOUSE (EX03)
+%% =========================
+subgraph EX03["EX03 – Data Warehouse (PostgreSQL)"]
+    
+    subgraph Staging["Staging Layer"]
+        STAGING["yellow_trips_staging<br>(mono-mois, overwrite)"]:::warehouse
+    end
+    
+    subgraph StarSchema["Star Schema"]
+        DIM_DATE["dim_date<br>date_id, year, month,<br>day, day_of_week"]:::dimension
+        DIM_TIME["dim_time<br>time_id, hour, minute"]:::dimension
+        DIM_LOC["dim_location<br>location_id, borough,<br>zone, service_zone"]:::dimension
+        DIM_VENDOR["dim_vendor<br>vendor_id, vendor_name"]:::dimension
+        DIM_PAY["dim_payment_type<br>payment_type_id,<br>payment_description"]:::dimension
+        DIM_RATE["dim_ratecode<br>ratecode_id,<br>ratecode_description"]:::dimension
+        FACT["fact_trip<br>trip_id, pickup_date,<br>pickup_time, amounts,<br>distances, FKs"]:::fact
+    end
+    
+    EX03_LOAD["Incremental Load<br>INSERT ... ON CONFLICT<br>DO NOTHING"]:::warehouse
+end
+
+STAGING --> EX03_LOAD
+EX03_LOAD --> DIM_DATE
+EX03_LOAD --> DIM_TIME
+EX03_LOAD --> DIM_LOC
+EX03_LOAD --> DIM_VENDOR
+EX03_LOAD --> DIM_PAY
+EX03_LOAD --> DIM_RATE
+EX03_LOAD --> FACT
+
+DIM_DATE --> FACT
+DIM_TIME --> FACT
+DIM_LOC --> FACT
+DIM_VENDOR --> FACT
+DIM_PAY --> FACT
+DIM_RATE --> FACT
+
+%% =========================
+%% EX04 – ANALYTICAL CONSUMPTION
+%% =========================
+subgraph EX04["EX04 – Analytical Consumption"]
+    
+    subgraph Notebook["Jupyter Notebook"]
+        EDA["EDA Analysis<br>• SQL queries<br>• Pandas exploration"]:::analytics
+    end
+    
+    subgraph Dashboard["Streamlit Dashboard"]
+        DASH_FILTERS["Sidebar Filters<br>• Période<br>• Type paiement<br>• Borough / Zone"]:::analytics
+        DASH_KPI["KPIs<br>• Total courses<br>• Chiffre d'affaires<br>• Montant moyen<br>• Distance moyenne"]:::analytics
+        DASH_CHARTS["Visualizations<br>• Évolution quotidienne<br>• Heures de pointe<br>• Répartition paiements<br>• Top 10 zones"]:::analytics
+    end
+end
+
+FACT --> EDA
+FACT --> DASH_FILTERS
+DASH_FILTERS --> DASH_KPI
+DASH_FILTERS --> DASH_CHARTS
+
+%% =========================
+%% EX05 – ML PREDICTION SERVICE
+%% =========================
+subgraph EX05["EX05 – ML Prediction Service (PySpark)"]
+    
+    subgraph MLParams["Parameters"]
+        ML_PARAMS["--test-month<br>--train-months<br>--skip-missing<br>--model-registry-path"]:::mlparam
+    end
+    
+    subgraph DataValidation["Data Validation"]
+        ML_VALIDATE["check_path_exists()<br>validate_months_exist()"]:::ml
+        ML_CHECK{"Data OK?"}:::decision
+        ML_ERROR["❌ Error Message<br>Missing months listed"]:::mlerror
+    end
+    
+    subgraph SlidingWindow["Fenêtre Glissante (3 mois)"]
+        TRAIN_DATA["Training Data<br>M-3, M-2, M-1"]:::ml
+        TEST_DATA["Test Data<br>Mois M"]:::ml
+    end
+    
+    subgraph FeatureEng["Feature Engineering"]
+        FEATURES["features.py<br>• hour, day_of_week<br>• is_weekend, is_night<br>• trip_duration<br>• speed_mph"]:::ml
+        VECTOR["VectorAssembler<br>feature_vector"]:::ml
+    end
+    
+    subgraph Training["Model Training"]
+        GBT["GBTRegressor<br>maxDepth=8<br>maxIter=100"]:::ml
+        EVAL["Evaluation<br>RMSE, MAE, R²"]:::ml
+    end
+    
+    subgraph Registry["Model Registry"]
+        CANDIDATE["candidate/<br>Nouveau modèle"]:::mlregistry
+        CURRENT["current/<br>Modèle production"]:::mlregistry
+        REGISTRY_JSON["model_registry.json<br>• model_id<br>• train_months<br>• test_month<br>• metrics<br>• created_at<br>• promotion_history"]:::mlregistry
+    end
+    
+    subgraph Promotion["Promotion Logic"]
+        COMPARE["Comparaison<br>candidate vs current"]:::ml
+        RULE{"2/3 métriques<br>améliorées?"}:::decision
+        PROMOTE_YES["✅ Promote<br>candidate → current"]:::mlsuccess
+        PROMOTE_NO["❌ Discard<br>candidate supprimé"]:::mlerror
+    end
+    
+    subgraph Reports["Reports"]
+        REPORTS_OUT["• train_metrics.json<br>• error_summary.json<br>• predict_report.json"]:::ml
+    end
+end
+
+DL_INTERIM -->|"Read Parquet"| ML_VALIDATE
+ML_PARAMS --> ML_VALIDATE
+ML_VALIDATE --> ML_CHECK
+ML_CHECK -->|"❌ Missing"| ML_ERROR
+ML_CHECK -->|"✅ OK"| TRAIN_DATA
+ML_CHECK -->|"✅ OK"| TEST_DATA
+TRAIN_DATA --> FEATURES
+TEST_DATA --> FEATURES
+FEATURES --> VECTOR
+VECTOR --> GBT
+GBT --> EVAL
+EVAL --> CANDIDATE
+EVAL --> REPORTS_OUT
+CANDIDATE --> COMPARE
+CURRENT --> COMPARE
+COMPARE --> RULE
+RULE -->|"✅ Yes"| PROMOTE_YES
+RULE -->|"❌ No"| PROMOTE_NO
+PROMOTE_YES --> CURRENT
+REGISTRY_JSON --> COMPARE
+COMPARE --> REGISTRY_JSON
+
+%% =========================
+%% EX06 – AIRFLOW ORCHESTRATION (Future)
+%% =========================
+subgraph EX06["EX06 – Airflow Orchestration (Future)"]
+    AIRFLOW["Airflow Scheduler<br>Monthly DAG"]:::orchestration
+    DAG_EX01["Task: EX01<br>Data Retrieval"]:::orchestration
+    DAG_EX02["Task: EX02<br>Data Ingestion"]:::orchestration
+    DAG_EX03["Task: EX03<br>DW Load"]:::orchestration
+    DAG_EX05["Task: EX05<br>ML Pipeline"]:::orchestration
+end
+
+AIRFLOW --> DAG_EX01
+DAG_EX01 --> DAG_EX02
+DAG_EX02 --> DAG_EX03
+DAG_EX02 --> DAG_EX05
+DAG_EX01 -. "spark-submit" .-> EX01
+DAG_EX02 -. "spark-submit" .-> EX02
+DAG_EX03 -. "psql scripts" .-> EX03
+DAG_EX05 -. "python ml_pipeline.py<br>--test-month {{ ds }}" .-> EX05
+
+%% =========================
+%% STYLES
+%% =========================
+classDef spark fill:#f6c85f,stroke:#333,color:#333
+classDef datalake fill:#6fa8dc,stroke:#333,color:#333
+classDef warehouse fill:#93c47d,stroke:#333,color:#333
+classDef dimension fill:#b6d7a8,stroke:#333,color:#333
+classDef fact fill:#6aa84f,stroke:#333,color:#fff
+classDef source fill:#cccccc,stroke:#333,color:#333
+classDef orchestration fill:#b4a7d6,stroke:#333,color:#333
+classDef analytics fill:#ffd966,stroke:#333,color:#333
+classDef ml fill:#ff9999,stroke:#333,color:#333
+classDef mlregistry fill:#ffcccc,stroke:#333,color:#333
+classDef mlparam fill:#f4cccc,stroke:#333,color:#333
+classDef mlsuccess fill:#6aa84f,stroke:#333,color:#fff
+classDef mlerror fill:#cc0000,stroke:#333,color:#fff
+classDef decision fill:#ff6666,stroke:#333,color:#fff
+classDef ex01 fill:#a4c2f4,stroke:#333,color:#333
+classDef ex02 fill:#b4a7d6,stroke:#333,color:#333
